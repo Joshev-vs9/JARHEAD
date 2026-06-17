@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exploded view annotator</title>
+<style id="ev-style">
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --ink:        #0E1116;
+    --ink-soft:   #586070;
+    --paper:      #ECEEEA;
+    --panel:      #FFFFFF;
+    --hairline:   #D7DAD2;
+    --blue:       #1E3AE6;   /* vivid layout blue */
+    --blue-deep:  #1227B4;
+    --blue-tint:  #E9ECFE;
+    --danger:     #C8351B;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--sans); color: var(--ink); background: var(--paper); }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, textarea, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ── Title block strip ─────────────────────────────────────────── */
+  .titleblock {
+    display: flex; align-items: stretch; gap: 0;
+    background: var(--panel); border-bottom: 1.5px solid var(--ink); flex: 0 0 auto;
+  }
+  .titleblock > * { padding: 10px 14px; border-right: 1px solid var(--hairline); }
+  .tb-brand {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; font-weight: 600;
+    color: var(--blue); display: flex; align-items: center; white-space: nowrap;
+  }
+  .tb-title { flex: 1 1 auto; display: flex; align-items: center; min-width: 0; }
+  .tb-title input { width: 100%; border: none; background: none; font-weight: 600; font-size: 15px; }
+  .tb-title input::placeholder { color: var(--ink-soft); font-weight: 400; }
+  .tb-title .ro-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-count { font-family: var(--mono); font-size: 12px; color: var(--ink-soft);
+    display: flex; align-items: center; white-space: nowrap; }
+  .tb-actions { display: flex; align-items: center; gap: 8px; border-right: none; }
+  .btn {
+    padding: 6px 12px; border: 1.5px solid var(--ink); border-radius: 2px;
+    font-size: 13px; font-weight: 500; background: var(--panel);
+  }
+  .btn:hover:not(:disabled) { background: var(--paper); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: var(--blue-deep); border-color: var(--blue-deep); }
+
+  /* ── Main area ─────────────────────────────────────────────────── */
+  .main { flex: 1 1 auto; display: flex; min-height: 0; }
+  .stage { position: relative; flex: 1 1 auto; min-width: 0;
+    background: radial-gradient(125% 95% at 50% 28%, #FBFCFA 0%, var(--paper) 68%, #E2E5DF 100%); }
+  .stage canvas { display: block; }
+
+  .modebar { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+  .modebar button {
+    width: 40px; height: 40px; border: 1.5px solid var(--ink); border-radius: 2px;
+    background: var(--panel); font-size: 17px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modebar button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .modebar button:hover:not([aria-pressed="true"]) { background: var(--paper); }
+
+  .mode-hint {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff; font-size: 12px; padding: 6px 12px;
+    border-radius: 2px; z-index: 5; pointer-events: none; opacity: 0; transition: opacity .2s;
+  }
+  .mode-hint.show { opacity: 1; }
+  .nav-legend {
+    position: absolute; bottom: 12px; right: 14px; z-index: 5; pointer-events: none;
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft);
+    text-align: right; line-height: 1.5; opacity: .8;
+  }
+  @media (prefers-reduced-motion: reduce) { .mode-hint { transition: none; } }
+
+  /* ── Balloon callout overlay ───────────────────────────────────── */
+  .overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+  .overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .overlay svg line { stroke: var(--ink); stroke-width: 1.25; }
+  .overlay svg circle.anchor-dot { fill: var(--ink); }
+  .balloon {
+    position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px;
+    border: 2px solid var(--ink); border-radius: 50%; background: var(--panel);
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; cursor: pointer; user-select: none;
+    box-shadow: 0 1px 3px rgba(14,17,22,.18);
+  }
+  .balloon:hover { border-color: var(--blue); color: var(--blue); }
+  .balloon.selected { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .balloon.unlinked { border-style: dashed; color: var(--ink-soft); }
+  .balloon.occluded { opacity: .32; }
+
+  .popover {
+    position: absolute; max-width: 280px; background: var(--panel);
+    border: 1.5px solid var(--ink); border-radius: 2px; padding: 10px 12px;
+    z-index: 6; pointer-events: auto; box-shadow: 4px 4px 0 rgba(30,58,230,.16);
+  }
+  .popover .po-part { font-family: var(--mono); font-size: 10.5px; color: var(--blue);
+    letter-spacing: .03em; margin-bottom: 3px; font-weight: 600; }
+  .popover .po-title { font-weight: 600; font-size: 14px; }
+  .popover .po-body { font-size: 13px; margin-top: 5px; white-space: pre-wrap; }
+
+  /* ── Notes panel ───────────────────────────────────────────────── */
+  .panel { flex: 0 0 330px; background: var(--panel); border-left: 1.5px solid var(--ink);
+    display: flex; flex-direction: column; min-height: 0; }
+  .panel-head {
+    padding: 10px 14px; border-bottom: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-head .bomstat { color: var(--blue); font-weight: 600; }
+  .panel-list { flex: 1 1 auto; overflow-y: auto; }
+  .note { border-bottom: 1px solid var(--hairline); padding: 12px 14px; cursor: pointer; }
+  .note.selected { background: var(--blue-tint); box-shadow: inset 3px 0 0 var(--blue); }
+  .note-row { display: flex; gap: 10px; align-items: flex-start; }
+  .note-num {
+    flex: 0 0 26px; height: 26px; width: 26px; border: 2px solid var(--ink);
+    border-radius: 50%; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .note.unlinked .note-num { border-style: dashed; color: var(--ink-soft); }
+  /* inline balloon references in note text (feature 2) */
+.ref-balloon {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.35em; height: 1.35em; padding: 0 .25em; margin: 0 1px;
+  border: 1.5px solid currentColor; border-radius: 999px;
+  font-size: .82em; font-weight: 600; line-height: 1;
+  vertical-align: baseline; cursor: pointer; user-select: none;
+}
+.ref-balloon.broken {
+  color: var(--danger); border-color: var(--danger); cursor: default;
+}
+
+/* live reference preview under the note textarea */
+.note-preview {
+  font-size: .82rem; color: var(--ink-soft);
+  margin-top: 2px; word-break: break-word;
+}
+.note-preview:empty { display: none; }
+
+/* floating balloons + notes after a model reload (feature 3) */
+.balloon.floating {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+}
+.note.floating { outline: 1px solid var(--danger); outline-offset: -1px; }
+.note.floating .note-num {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+}
+
+/* mode affordances */
+body.ref-inserting #stage, body.reconnect-mode #stage { cursor: crosshair; }
+
+  .note.selected .note-num { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .note-fields { flex: 1 1 auto; min-width: 0; }
+  .note-part { font-family: var(--mono); font-size: 11px; color: var(--blue); font-weight: 600;
+    letter-spacing: .02em; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note-part .pn { color: var(--ink-soft); font-weight: 400; }
+  .note-relink {
+    width: 100%; margin-bottom: 6px; padding: 3px 4px; font-size: 12px;
+    border: 1px solid var(--hairline); border-radius: 2px; background: var(--paper);
+  }
+  .note-fields input.note-title {
+    width: 100%; border: none; border-bottom: 1px solid transparent;
+    font-weight: 600; font-size: 13.5px; padding: 1px 0; background: none;
+  }
+  .note-fields input.note-title:focus { border-bottom-color: var(--blue); outline: none; }
+  .note-fields textarea {
+    width: 100%; border: none; resize: vertical; min-height: 32px; font-size: 13px;
+    background: none; margin-top: 4px; line-height: 1.45;
+  }
+  .note-fields textarea:focus { outline: none; }
+  .note-ro-title { font-weight: 600; font-size: 13.5px; }
+  .note-ro-body { font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
+  .note-tools { display: flex; gap: 2px; margin-top: 6px; justify-content: flex-end; }
+  .note-tools button { font-size: 11px; font-family: var(--mono); color: var(--ink-soft); padding: 3px 7px; border-radius: 2px; }
+  .note-tools button:hover { background: var(--paper); color: var(--ink); }
+  .note-tools button.del:hover { color: var(--danger); }
+  .panel-empty { padding: 22px 16px; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+  .panel-empty b { color: var(--ink); }
+
+  .dropzone { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 3; text-align: center; padding: 24px; }
+  .dz-frame { border: 2px dashed var(--ink-soft); border-radius: 2px; padding: 44px 56px; background: rgba(255,255,255,.65); }
+  .dz-frame h2 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  .dz-frame p { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 16px; }
+  .dz-frame .mono { font-family: var(--mono); font-size: 12px; }
+  body.dragging .dz-frame { border-color: var(--blue); background: var(--blue-tint); }
+
+  .toast { position: absolute; top: 14px; right: 14px; z-index: 8; background: var(--ink); color: #fff;
+    font-size: 13px; padding: 8px 14px; border-radius: 2px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; max-width: 360px; }
+  .toast.show { opacity: 1; }
+  .toast.err { background: var(--danger); }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+  @media (max-width: 760px) {
+    .panel { flex-basis: 250px; }
+    .tb-brand, .tb-count, .nav-legend { display: none; }
+  }
+</style>
+<script type="importmap" id="ev-importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="application/json" id="embedded-data">null</script>
+<script type="module" id="ev-core">
+import * as THREE from 'three';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ════════════════════════════════════════════════════════════════════
+   Exploded view annotator
+   EDITOR (no embedded data):   load .glb + parts.json, place balloons, publish.
+   PUBLISHED (embedded data):   read-only viewer reconstructed from this file.
+   ════════════════════════════════════════════════════════════════════ */
+
+const embeddedEl = document.getElementById('embedded-data');
+let   EMBEDDED   = null;
+try { EMBEDDED = JSON.parse(embeddedEl.textContent); } catch (e) { EMBEDDED = null; }
+const READ_ONLY  = !!EMBEDDED;
+const REDUCED    = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── State ─────────────────────────────────────────────────────────── */
+const state = {
+  title: '',
+  notes: [],     // {id, anchor:[x,y,z], node, item, name, partNumber, title, body}
+  bom:   [],     // {item, name, partNumber, quantity, match:[normalized]}
+};
+let modelB64 = null, gltfText = null;
+let selectedId = null, mode = 'orbit', nextId = 1;
+let refInsertFor = null, reconnectPick = null;
+
+/* normalise a label for BOM matching (mirror of the exporter's norm()) */
+function norm(s) {
+  return String(s ?? '').toLowerCase()
+    .replace(/<[^>]*>/g, ' ').replace(/\([^)]*\)/g, ' ')
+    .replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/* ── DOM scaffold ──────────────────────────────────────────────────── */
+const app = document.getElementById('app');
+app.innerHTML = `
+  <div class="titleblock">
+    <div class="tb-brand">EXPLODED VIEW</div>
+    <div class="tb-title"></div>
+    <div class="tb-count"><span id="count">0</span>&nbsp;NOTES</div>
+    <div class="tb-actions" id="actions"></div>
+  </div>
+  <div class="main">
+    <div class="stage" id="stage">
+      <div class="modebar" id="modebar"></div>
+      <div class="overlay" id="overlay"><svg id="leaders"></svg></div>
+      <div class="mode-hint" id="modehint">Click a part to place a balloon</div>
+      <div class="nav-legend" id="navlegend"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <aside class="panel">
+      <div class="panel-head"><span>BALLOON NOTES</span><span class="bomstat" id="bomstat"></span></div>
+      <div class="panel-list" id="notelist"></div>
+    </aside>
+  </div>`;
+
+const stage   = document.getElementById('stage');
+const overlay = document.getElementById('overlay');
+const leaders = document.getElementById('leaders');
+const notelist = document.getElementById('notelist');
+const countEl = document.getElementById('count');
+const toastEl = document.getElementById('toast');
+const modehint = document.getElementById('modehint');
+const bomstat = document.getElementById('bomstat');
+document.getElementById('navlegend').innerHTML =
+  'right-drag rotate · scroll zoom · middle-drag pan';
+
+const tbTitle = app.querySelector('.tb-title');
+if (READ_ONLY) {
+  tbTitle.innerHTML = `<div class="ro-title"></div>`;
+} else {
+  tbTitle.innerHTML = `<input id="doctitle" placeholder="Untitled exploded view" aria-label="Document title">`;
+  tbTitle.querySelector('input').addEventListener('input', e => { state.title = e.target.value; });
+}
+
+const actions = document.getElementById('actions');
+if (!READ_ONLY) {
+  actions.innerHTML = `
+    <button class="btn" id="b-model">Load model</button>
+    <button class="btn" id="b-reload" disabled>Reload model</button>
+    <button class="btn" id="b-bom" disabled>Load parts list</button>
+    <button class="btn" id="b-loadnotes" disabled>Load notes</button>
+    <button class="btn" id="b-savenotes" disabled>Save notes</button>
+    <button class="btn primary" id="b-publish" disabled>Publish</button>`;
+}
+
+const modebar = document.getElementById('modebar');
+modebar.innerHTML = `
+  <button id="m-orbit" aria-pressed="true" title="Orbit" aria-label="Orbit mode">&#8634;</button>
+  ${READ_ONLY ? '' : `<button id="m-annotate" aria-pressed="false" title="Add balloon" aria-label="Annotate mode">&#9678;</button>`}
+  ${READ_ONLY ? '' : `<button id="m-reconnect" aria-pressed="false" title="Reconnect floating balloons" aria-label="Reconnect mode">&#128279;</button>`}
+  <button id="m-fit" title="Fit view" aria-label="Fit view">&#8689;</button>`;
+
+/* ── three.js scene ────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+stage.insertBefore(renderer.domElement, stage.firstChild);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.05).texture;
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.001, 1000);
+camera.position.set(0.4, 0.3, 0.5);
+
+/* Free-tumble navigation (TrackballControls) — identical in both modes:
+   right-drag = orbit, middle-drag = pan, wheel = zoom. The left button is left
+   unmapped so a left-click can place a balloon in annotate mode.
+   Quirk: each KEY below is a FIXED action (LEFT->rotate, MIDDLE->zoom,
+   RIGHT->pan); the VALUE is the mouse-button index that fires it. So we point
+   the rotate action at the right button and the pan action at the middle
+   button, and disable drag-zoom (the scroll wheel still zooms). */
+const controls = new TrackballControls(camera, renderer.domElement);
+controls.rotateSpeed = 2.4;
+controls.zoomSpeed   = 1.2;
+controls.panSpeed    = 0.9;
+controls.staticMoving = true;          // crisp; no inertial drift
+controls.dynamicDampingFactor = 0.15;  // only used if staticMoving = false
+controls.mouseButtons = { LEFT: THREE.MOUSE.RIGHT, MIDDLE: -1, RIGHT: THREE.MOUSE.MIDDLE };
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.32));
+const key  = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(1, 2, 1.5);
+const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-1.5, 0.5, -1);
+scene.add(key, fill);
+
+let modelRoot = null, meshes = [], modelRadius = 1;
+const raycaster = new THREE.Raycaster();
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (typeof controls !== 'undefined' && controls.handleResize) controls.handleResize();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+/* ── Camera helpers ────────────────────────────────────────────────── */
+let tween = null;
+function flyTo(targetVec, distance) {
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  const endTarget = targetVec.clone();
+  const endPos = targetVec.clone().add(dir.multiplyScalar(distance));
+  if (REDUCED) { controls.target.copy(endTarget); camera.position.copy(endPos); return; }
+  tween = { t: 0, fromT: controls.target.clone(), toT: endTarget, fromP: camera.position.clone(), toP: endPos };
+}
+function fitView() {
+  if (!modelRoot) return;
+  const box = new THREE.Box3().setFromObject(modelRoot);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = box.getSize(new THREE.Vector3()).length() / 2 || 1;
+  modelRadius = radius;
+  camera.near = radius / 1000; camera.far = radius * 50; camera.updateProjectionMatrix();
+  const dir = new THREE.Vector3(0.55, 0.4, 0.74).normalize();
+  controls.target.copy(center);
+  camera.position.copy(center.clone().add(dir.multiplyScalar(radius * 2.3)));
+  controls.update();
+}
+
+/* ── Model loading ─────────────────────────────────────────────────── */
+const loader = new GLTFLoader();
+function addModel(gltf) {
+  const hadNotes = state.notes.length > 0;
+  if (modelRoot) scene.remove(modelRoot);
+  modelRoot = gltf.scene; meshes = [];
+  modelRoot.traverse(o => { if (o.isMesh) meshes.push(o); });
+  scene.add(modelRoot); fitView();
+  const dz = stage.querySelector('.dropzone'); if (dz) dz.remove();
+  if (!READ_ONLY)
+    for (const id of ['b-bom', 'b-reload', 'b-loadnotes', 'b-savenotes', 'b-publish'])
+      { const el = document.getElementById(id); if (el) el.disabled = false; }
+  if (hadNotes) reconnectNotes();
+  else toast(`Model loaded — ${meshes.length} bodies`);
+}
+const loadGLBBuffer = buf => loader.parse(buf, '', addModel, e => toast('Could not read model: ' + e.message, true));
+const loadGLTFText  = txt => loader.parse(txt, '', addModel, e => toast('Could not read model: ' + e.message, true));
+
+function bufToB64(buf) {
+  const bytes = new Uint8Array(buf); let s = ''; const C = 0x8000;
+  for (let i = 0; i < bytes.length; i += C) s += String.fromCharCode.apply(null, bytes.subarray(i, i + C));
+  return btoa(s);
+}
+function b64ToBuf(b64) {
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function handleModelFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.glb')) file.arrayBuffer().then(buf => { modelB64 = bufToB64(buf); gltfText = null; loadGLBBuffer(buf); });
+  else if (name.endsWith('.gltf')) file.text().then(txt => { gltfText = txt; modelB64 = null; loadGLTFText(txt); });
+  else toast('Expected a .glb or .gltf file', true);
+}
+
+/* ── Part-name resolution ──────────────────────────────────────────── */
+const GENERIC = /^(scene|rootnode|root|object_?\d*|mesh_?\d*|node_?\d*|primitive_?\d*|gltf.*|untitled)$/i;
+function meaningfulName(obj) {
+  let o = obj;
+  while (o) {
+    const n = (o.name || '').trim();
+    if (n && !GENERIC.test(n) && !/^\d+$/.test(n)) return n;
+    o = o.parent;
+  }
+  return '';
+}
+
+/* ── BOM linking ───────────────────────────────────────────────────── */
+function matchBom(label) {
+  const n = norm(label);
+  if (!state.bom.length || !n) return null;
+  let hit = state.bom.find(b => b.match.includes(n));
+  if (hit) return hit;
+  hit = state.bom.find(b => b.match.some(m => m && (n === m || n.startsWith(m + ' ') || m.startsWith(n + ' '))));
+  return hit || null;
+}
+function applyBomData(arr) {
+  state.bom = (arr || []).map(it => ({
+    item: it.item, name: it.name || '', partNumber: it.partNumber || '', quantity: it.quantity,
+    match: (it.match && it.match.length) ? it.match.map(norm) : [norm(it.name), norm(it.partNumber)].filter(Boolean),
+  }));
+  // back-fill any unlinked notes now that a list exists
+  for (const n of state.notes) if (n.item == null) {
+    const h = matchBom(n.node || n.name);
+    if (h) { n.item = h.item; n.name = h.name; n.partNumber = h.partNumber; }
+  }
+  bomstat.textContent = state.bom.length ? `· ${state.bom.length} parts` : '';
+}
+
+/* ── Reconnect helpers (Feature 3) ─────────────────────────────────── */
+function identityOf(obj) {
+  return meaningfulName(obj) || (obj && obj.name) || '';
+}
+
+function partCentroid(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const c = box.getCenter(new THREE.Vector3());
+  return [c.x, c.y, c.z];
+}
+
+function buildIdentityIndex() {
+  const idx = new Map();
+  if (!modelRoot) return idx;
+  const visit = (o) => {
+    const name = identityOf(o);
+    if (name && o.children && o.children.some(c => c.isMesh || (c.children && c.children.length))) {
+      const k = norm(name);
+      if (!idx.has(k)) idx.set(k, []);
+      idx.get(k).push(o);
+    }
+    o.children && o.children.forEach(visit);
+  };
+  (modelRoot.children && modelRoot.children.length ? modelRoot.children : [modelRoot]).forEach(visit);
+  return idx;
+}
+
+function reconnectNotes() {
+  if (!state.notes.length) return;
+  const idx = buildIdentityIndex();
+  const usedByKey = new Map();
+  let reconnected = 0, floated = 0;
+  for (const n of state.notes) {
+    const k = norm(n.key || n.node || n.name);
+    const cands = idx.get(k);
+    let pick = null;
+    if (cands && cands.length) {
+      const used = usedByKey.get(k) || 0;
+      pick = cands[Math.min(used, cands.length - 1)];
+      usedByKey.set(k, used + 1);
+    }
+    if (pick) {
+      n.anchor = partCentroid(pick);
+      n.floating = false;
+      const label = identityOf(pick);
+      n.node = label; if (!n.key) n.key = label;
+      const link = matchBom(label);
+      if (link) { n.item = link.item; n.name = link.name; n.partNumber = link.partNumber; }
+      reconnected++;
+    } else {
+      n.floating = true; floated++;
+    }
+  }
+  renderNotes();
+  if (floated) toast(`Reloaded — ${reconnected} reconnected, ${floated} floating. Use Reconnect mode to re-link.`, true);
+  else toast(`Reloaded — all ${reconnected} balloons reconnected`);
+}
+
+function reconnectFloatingNote(noteId, point, obj) {
+  const n = state.notes.find(x => x.id === noteId); if (!n) return;
+  const label = identityOf(obj);
+  n.anchor = [point.x, point.y, point.z];
+  n.node = label; n.key = label; n.floating = false;
+  const link = matchBom(label);
+  n.item = link ? link.item : null;
+  n.name = link ? link.name : (label || 'Part');
+  n.partNumber = link ? link.partNumber : '';
+  reconnectPick = null;
+  renderNotes();
+  toast(`Reconnected to "${label}"`);
+}
+
+/* ── Annotations ───────────────────────────────────────────────────── */
+function addNoteAt(point, obj) {
+  const label = meaningfulName(obj) || (obj.name || '');
+  const link = matchBom(label);
+  const note = {
+    id: nextId++, anchor: [point.x, point.y, point.z], node: label,
+    item: link ? link.item : null,
+    name: link ? link.name : (label || 'Part'),
+    partNumber: link ? link.partNumber : '',
+    title: '', body: '',
+    key: label, floating: false,
+  };
+  state.notes.push(note); selectedId = note.id; renderNotes();
+  const inp = notelist.querySelector(`[data-id="${note.id}"] input.note-title`);
+  if (inp) inp.focus();
+}
+function deleteNote(id) { state.notes = state.notes.filter(n => n.id !== id); if (selectedId === id) selectedId = null; renderNotes(); }
+function moveNote(id, d) {
+  const i = state.notes.findIndex(n => n.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= state.notes.length) return;
+  const [n] = state.notes.splice(i, 1); state.notes.splice(j, 0, n); renderNotes();
+}
+function selectNote(id, fly) {
+  selectedId = id;
+  const n = state.notes.find(x => x.id === id);
+  if (n && fly) flyTo(new THREE.Vector3(...n.anchor), Math.max(modelRadius * 0.9, 0.05));
+  renderNotes();
+}
+
+/* ── Numbering ─────────────────────────────────────────────────────── */
+function dispNum(n, i) {
+  if (state.bom.length) return (n.item == null ? '?' : n.item);
+  return i + 1;
+}
+
+/* ── Panel rendering ───────────────────────────────────────────────── */
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function partLine(n) {
+  const nm = esc(n.name) || '<span class="pn">unidentified</span>';
+  return n.partNumber ? `${nm} <span class="pn">· ${esc(n.partNumber)}</span>` : nm;
+}
+
+/* ── Ref-token helpers (Feature 2) ─────────────────────────────────── */
+function noteNumberById(id) {
+  const i = state.notes.findIndex(x => x.id === id);
+  if (i < 0) return null;
+  return { note: state.notes[i], num: dispNum(state.notes[i], i) };
+}
+
+const REF_TOKEN = /\{\{(\d+)\}\}/g;
+
+function renderRefs(text) {
+  return esc(text).replace(REF_TOKEN, (_, idStr) => {
+    const id = +idStr;
+    const r = noteNumberById(id);
+    if (!r || r.note.floating) {
+      return `<span class="ref-balloon broken" title="reference to a floating/removed balloon">?</span>`;
+    }
+    return `<span class="ref-balloon" data-ref="${id}" title="${esc(r.note.name)}">${esc(r.num)}</span>`;
+  });
+}
+
+function refTextToTokens(text) {
+  return text.replace(/#(\d+)\b/g, (whole, numStr) => {
+    const target = state.notes.find((nn, i) => String(dispNum(nn, i)) === numStr);
+    return target ? `{{${target.id}}}` : whole;
+  });
+}
+
+function tokensToRefText(text) {
+  return String(text || '').replace(REF_TOKEN, (_, idStr) => {
+    const r = noteNumberById(+idStr);
+    return r && !r.note.floating ? `#${r.num}` : '#?';
+  });
+}
+
+/* ── Ref-insert helpers (Feature 2) ────────────────────────────────── */
+function startRefInsert(id) {
+  refInsertFor = id;
+  toast('Reference: click another balloon to insert it');
+  document.body.classList.add('ref-inserting');
+}
+function cancelRefInsert() {
+  refInsertFor = null; document.body.classList.remove('ref-inserting');
+}
+function insertRefInto(hostId, targetId) {
+  if (hostId === targetId) { toast('A balloon can\'t reference itself', true); cancelRefInsert(); return; }
+  const host = state.notes.find(x => x.id === hostId); if (!host) { cancelRefInsert(); return; }
+  host.body = (host.body ? host.body + ' ' : '') + `{{${targetId}}}`;
+  cancelRefInsert(); renderNotes();
+}
+
+function renderNotes() {
+  countEl.textContent = state.notes.length;
+  if (!state.notes.length) {
+    notelist.innerHTML = READ_ONLY
+      ? `<div class="panel-empty">No notes in this view.</div>`
+      : `<div class="panel-empty">No balloons yet.<br><br>
+         Switch to <b>&#9678; annotate</b> and click any part to place a balloon.
+         ${state.bom.length ? 'Balloon numbers follow your parts list.' :
+           'Load a parts list to number balloons to your BOM.'}</div>`;
+    syncBalloons(); return;
+  }
+  notelist.innerHTML = state.notes.map((n, i) => {
+    const sel = n.id === selectedId ? ' selected' : '';
+    const floatCls = n.floating ? ' floating' : '';
+    const unl = (!n.floating && state.bom.length && n.item == null) ? ' unlinked' : '';
+    const num = dispNum(n, i);
+    if (READ_ONLY) {
+      return `<div class="note${sel}${unl}${floatCls}" data-id="${n.id}">
+        <div class="note-row"><div class="note-num">${n.floating ? '!' : esc(num)}</div>
+          <div class="note-fields">
+            <div class="note-part">${partLine(n)}</div>
+            <div class="note-ro-title">${renderRefs(n.title) || '&mdash;'}</div>
+            ${n.body ? `<div class="note-ro-body">${renderRefs(n.body)}</div>` : ''}
+          </div></div></div>`;
+    }
+    return `<div class="note${sel}${unl}${floatCls}" data-id="${n.id}">
+      <div class="note-row"><div class="note-num">${n.floating ? '!' : esc(num)}</div>
+        <div class="note-fields">
+          <div class="note-part">${partLine(n)}</div>
+          <input class="note-title" placeholder="Note title" value="${esc(tokensToRefText(n.title))}" aria-label="Note title">
+          <textarea placeholder="Details (optional)" aria-label="Note details">${esc(tokensToRefText(n.body))}</textarea>
+          <div class="note-preview">${renderRefs(n.body)}</div>
+          <div class="note-tools">
+            <button data-act="up" title="Move up">&uarr;</button>
+            <button data-act="down" title="Move down">&darr;</button>
+            <button data-act="ref" title="Reference another balloon">&#9313; REF</button>
+            <button data-act="focus" title="Fly to balloon">FOCUS</button>
+            <button data-act="del" class="del" title="Delete">DELETE</button>
+          </div>
+        </div></div></div>`;
+  }).join('');
+  syncBalloons();
+}
+
+notelist.addEventListener('click', e => {
+  const noteEl = e.target.closest('.note'); if (!noteEl) return;
+  const id = +noteEl.dataset.id;
+  const act = e.target.dataset && e.target.dataset.act;
+  if (e.target.classList.contains('ref-balloon') && e.target.dataset.ref) {
+    return selectNote(+e.target.dataset.ref, true);
+  }
+  if (act === 'del')   return deleteNote(id);
+  if (act === 'up')    return moveNote(id, -1);
+  if (act === 'down')  return moveNote(id, +1);
+  if (act === 'focus') return selectNote(id, true);
+  if (act === 'ref')   return startRefInsert(id);
+  if (refInsertFor !== null && refInsertFor !== id) { return insertRefInto(refInsertFor, id); }
+  if (mode === 'reconnect') {
+    const n = state.notes.find(x => x.id === id);
+    if (n && n.floating) {
+      reconnectPick = id; selectedId = id; renderNotes();
+      toast('Now click this balloon\'s part in the model'); return;
+    }
+  }
+  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { if (selectedId !== id) selectNote(id, false); return; }
+  selectNote(id, READ_ONLY);
+});
+notelist.addEventListener('input', e => {
+  const noteEl = e.target.closest('.note'); if (!noteEl) return;
+  const n = state.notes.find(x => x.id === +noteEl.dataset.id); if (!n) return;
+  if (e.target.classList.contains('note-title')) n.title = refTextToTokens(e.target.value);
+  if (e.target.tagName === 'TEXTAREA') {
+    n.body = refTextToTokens(e.target.value);
+    const prev = noteEl.querySelector('.note-preview');
+    if (prev) prev.innerHTML = renderRefs(n.body);
+  }
+});
+
+/* ── Balloon overlay ───────────────────────────────────────────────── */
+const balloonEls = new Map();
+let popover = null;
+function syncBalloons() {
+  const ids = new Set(state.notes.map(n => n.id));
+  for (const [id, b] of balloonEls) if (!ids.has(id)) { b.el.remove(); b.line.remove(); b.dot.remove(); balloonEls.delete(id); }
+  for (const n of state.notes) if (!balloonEls.has(n.id)) {
+    const el = document.createElement('button');
+    el.className = 'balloon'; el.setAttribute('aria-label', 'Balloon note');
+    el.addEventListener('click', () => {
+      if (refInsertFor !== null) { insertRefInto(refInsertFor, n.id); return; }
+      selectNote(n.id, false); showPopover(n.id);
+      const item = notelist.querySelector(`[data-id="${n.id}"]`);
+      if (item) item.scrollIntoView({ block: 'nearest', behavior: REDUCED ? 'auto' : 'smooth' });
+    });
+    overlay.appendChild(el);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('class', 'anchor-dot'); dot.setAttribute('r', '2.5');
+    leaders.appendChild(line); leaders.appendChild(dot);
+    balloonEls.set(n.id, { el, line, dot });
+  }
+  if (popover && !ids.has(popover.id)) hidePopover();
+}
+function showPopover(id) {
+  hidePopover();
+  const n = state.notes.find(x => x.id === id); if (!n) return;
+  const i = state.notes.indexOf(n);
+  const card = document.createElement('div');
+  card.className = 'popover';
+  card.innerHTML = `<div class="po-part">#${esc(dispNum(n, i))} · ${partLine(n)}</div>
+    <div class="po-title">${renderRefs(n.title) || '&mdash;'}</div>
+    ${n.body ? `<div class="po-body">${renderRefs(n.body)}</div>` : ''}`;
+  overlay.appendChild(card); popover = { id, card };
+}
+function hidePopover() { if (popover) { popover.card.remove(); popover = null; } }
+renderer.domElement.addEventListener('pointerdown', hidePopover);
+
+const OFFSET = { x: 36, y: -36 };
+const v3 = new THREE.Vector3();
+function updateOverlay() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  for (let i = 0; i < state.notes.length; i++) {
+    const n = state.notes[i], b = balloonEls.get(n.id); if (!b) continue;
+    v3.set(n.anchor[0], n.anchor[1], n.anchor[2]).project(camera);
+    const behind = v3.z > 1;
+    const x = (v3.x * 0.5 + 0.5) * w, y = (-v3.y * 0.5 + 0.5) * h;
+    const off = x + OFFSET.x > w - 20 ? { x: -OFFSET.x, y: OFFSET.y } : OFFSET;
+    const bx = x + off.x, by = y + off.y;
+    const vis = !behind && x > -40 && x < w + 40 && y > -40 && y < h + 40;
+    b.el.style.display = b.line.style.display = b.dot.style.display = vis ? '' : 'none';
+    if (!vis) continue;
+    b.el.style.left = bx + 'px'; b.el.style.top = by + 'px';
+    b.el.textContent = n.floating ? '!' : dispNum(n, i);
+    b.el.classList.toggle('selected', n.id === selectedId);
+    b.el.classList.toggle('floating', !!n.floating);
+    b.el.classList.toggle('unlinked', !n.floating && state.bom.length && n.item == null);
+    let occluded = false;
+    if (meshes.length) {
+      const anchor = new THREE.Vector3(...n.anchor);
+      const toA = anchor.clone().sub(camera.position); const dist = toA.length();
+      raycaster.set(camera.position, toA.normalize());
+      raycaster.far = dist - Math.max(modelRadius * 0.002, 1e-5);
+      occluded = raycaster.intersectObjects(meshes, true).length > 0;
+    }
+    b.el.classList.toggle('occluded', occluded);
+    b.line.style.opacity = b.dot.style.opacity = occluded ? .32 : 1;
+    const dx = bx - x, dy = by - y, len = Math.hypot(dx, dy) || 1, rim = 16 / len;
+    b.line.setAttribute('x1', x); b.line.setAttribute('y1', y);
+    b.line.setAttribute('x2', bx - dx * rim); b.line.setAttribute('y2', by - dy * rim);
+    b.dot.setAttribute('cx', x); b.dot.setAttribute('cy', y);
+    if (popover && popover.id === n.id) {
+      popover.card.style.left = Math.min(bx + 20, w - 290) + 'px';
+      popover.card.style.top = Math.max(by - 10, 8) + 'px';
+    }
+  }
+}
+
+/* ── Mode + stage interaction ──────────────────────────────────────── */
+function setMode(m) {
+  mode = m;
+  reconnectPick = null;
+  cancelRefInsert();
+  document.getElementById('m-orbit').setAttribute('aria-pressed', m === 'orbit');
+  const ab = document.getElementById('m-annotate'); if (ab) ab.setAttribute('aria-pressed', m === 'annotate');
+  const rb = document.getElementById('m-reconnect'); if (rb) rb.setAttribute('aria-pressed', m === 'reconnect');
+  modehint.textContent = m === 'annotate' ? 'Click a part to place a balloon'
+    : m === 'reconnect' ? 'Click a floating (red) balloon, then click its part'
+    : '';
+  modehint.classList.toggle('show', m === 'annotate' || m === 'reconnect');
+  renderer.domElement.style.cursor = m === 'annotate' ? 'crosshair' : '';
+  document.body.classList.toggle('reconnect-mode', m === 'reconnect');
+}
+document.getElementById('m-orbit').addEventListener('click', () => setMode('orbit'));
+const annotateBtn = document.getElementById('m-annotate');
+if (annotateBtn) annotateBtn.addEventListener('click', () => setMode('annotate'));
+const reconnectBtn = document.getElementById('m-reconnect');
+if (reconnectBtn) reconnectBtn.addEventListener('click', () => setMode(mode === 'reconnect' ? 'orbit' : 'reconnect'));
+document.getElementById('m-fit').addEventListener('click', fitView);
+
+let downPos = null;
+renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 0) downPos = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (e.button !== 0 || !downPos) { downPos = null; return; }
+  const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5;
+  downPos = null;
+  if (moved || READ_ONLY || !meshes.length) return;
+  if (mode !== 'annotate' && mode !== 'reconnect') return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.far = Infinity; raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(meshes, true);
+  if (!hits.length) return;
+  if (mode === 'annotate') {
+    addNoteAt(hits[0].point, hits[0].object);
+  } else if (mode === 'reconnect') {
+    if (reconnectPick == null) { toast('Pick a floating balloon first', true); return; }
+    reconnectFloatingNote(reconnectPick, hits[0].point, hits[0].object);
+  }
+});
+
+/* ── Save / load / publish ─────────────────────────────────────────── */
+function serializeState() {
+  return {
+    version: 2, title: state.title,
+    camera: { pos: camera.position.toArray(), target: controls.target.toArray() },
+    bom: state.bom.map(b => ({ item: b.item, name: b.name, partNumber: b.partNumber, quantity: b.quantity, match: b.match })),
+    notes: state.notes.map(n => ({ ...n })),
+  };
+}
+function applyState(s) {
+  state.title = s.title || '';
+  if (s.bom) applyBomData(s.bom);
+  state.notes = (s.notes || []).map(n => ({
+    id: n.id, anchor: n.anchor, node: n.node || n.part || '',
+    item: (n.item === undefined ? null : n.item),
+    name: n.name || n.part || 'Part', partNumber: n.partNumber || '',
+    title: n.title || '', body: n.body || '',
+    key: n.key || n.node || n.part || '', floating: !!n.floating,
+  }));
+  nextId = state.notes.reduce((m, n) => Math.max(m, n.id), 0) + 1;
+  const inp = document.getElementById('doctitle'); if (inp) inp.value = state.title;
+  const ro = app.querySelector('.ro-title'); if (ro) ro.textContent = state.title || 'Exploded view';
+  document.title = (state.title || 'Exploded view') + ' — annotated';
+  if (s.camera && s.camera.pos && s.camera.target) {
+    camera.position.fromArray(s.camera.pos); controls.target.fromArray(s.camera.target); controls.update();
+  }
+  renderNotes();
+}
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function pickFile(accept, cb) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept;
+  inp.addEventListener('change', () => { if (inp.files[0]) cb(inp.files[0]); }); inp.click();
+}
+function loadJsonFile(file) {
+  file.text().then(t => {
+    let obj; try { obj = JSON.parse(t); } catch (e) { return toast('Not valid JSON', true); }
+    if (Array.isArray(obj.items)) { applyBomData(obj.items); renderNotes(); toast(`Parts list loaded — ${state.bom.length} items`); }
+    else if (obj.notes !== undefined) { applyState(obj); toast('Notes loaded'); }
+    else toast('Unrecognised JSON (expected a parts list or notes file)', true);
+  });
+}
+
+if (!READ_ONLY) {
+  document.getElementById('b-model').addEventListener('click', () => pickFile('.glb,.gltf', handleModelFile));
+  document.getElementById('b-reload').addEventListener('click', () => pickFile('.glb,.gltf', handleModelFile));
+  document.getElementById('b-bom').addEventListener('click', () => pickFile('.json', loadJsonFile));
+  document.getElementById('b-loadnotes').addEventListener('click', () => pickFile('.json', loadJsonFile));
+  document.getElementById('b-savenotes').addEventListener('click', () => {
+    download((state.title || 'exploded-view') + '.notes.json', JSON.stringify(serializeState(), null, 2), 'application/json');
+    toast('Notes saved');
+  });
+  document.getElementById('b-publish').addEventListener('click', publish);
+}
+
+function publish() {
+  if (!modelB64 && !gltfText) return toast('Load a model first', true);
+  const data = { state: serializeState() };
+  if (modelB64) data.glb = modelB64; else data.gltf = gltfText;
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  const styleTxt = document.getElementById('ev-style').textContent;
+  const mapTxt = document.getElementById('ev-importmap').textContent;
+  const coreTxt = document.getElementById('ev-core').textContent;
+  const SC = '</' + 'script>';
+  const title = esc(state.title || 'Exploded view');
+  const html =
+    '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    `<title>${title} — annotated</title>\n` +
+    `<style id="ev-style">${styleTxt}</style>\n` +
+    `<script type="importmap" id="ev-importmap">${mapTxt}${SC}\n</head>\n<body>\n<div id="app"></div>\n` +
+    `<script type="application/json" id="embedded-data">${json}${SC}\n` +
+    `<script type="module" id="ev-core">${coreTxt}${SC}\n</body>\n</html>\n`;
+  download(((state.title || '').replace(/[^\w\- ]+/g, '').trim() || 'exploded-view') + '.html', html, 'text/html');
+  toast('Published — share the downloaded HTML file');
+}
+
+/* ── Toast / dropzone ──────────────────────────────────────────────── */
+let toastTimer = null;
+function toast(msg, err) {
+  toastEl.textContent = msg; toastEl.classList.toggle('err', !!err); toastEl.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3200);
+}
+if (!READ_ONLY) {
+  const dz = document.createElement('div');
+  dz.className = 'dropzone';
+  dz.innerHTML = `<div class="dz-frame">
+    <h2>Drop your model here</h2>
+    <p>A <span class="mono">.glb</span> from the exploded assembly, then a
+       <span class="mono">parts.json</span> for BOM numbers</p>
+    <button class="btn" id="dz-pick">Choose file</button></div>`;
+  stage.appendChild(dz);
+  dz.querySelector('#dz-pick').addEventListener('click', () => pickFile('.glb,.gltf', handleModelFile));
+  addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+  addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+  addEventListener('drop', e => {
+    e.preventDefault(); document.body.classList.remove('dragging');
+    const f = e.dataTransfer.files[0]; if (!f) return;
+    if (f.name.toLowerCase().endsWith('.json')) loadJsonFile(f); else handleModelFile(f);
+  });
+}
+
+/* ── Render loop ───────────────────────────────────────────────────── */
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  if (tween) {
+    tween.t = Math.min(1, tween.t + dt / 0.6);
+    const k = 1 - Math.pow(1 - tween.t, 3);
+    controls.target.lerpVectors(tween.fromT, tween.toT, k);
+    camera.position.lerpVectors(tween.fromP, tween.toP, k);
+    if (tween.t >= 1) tween = null;
+  }
+  controls.update(); renderer.render(scene, camera); updateOverlay();
+}
+animate();
+
+/* ── Boot ──────────────────────────────────────────────────────────── */
+setMode('orbit');
+renderNotes();
+if (READ_ONLY) {
+  if (EMBEDDED.glb) loadGLBBuffer(b64ToBuf(EMBEDDED.glb));
+  else if (EMBEDDED.gltf) loadGLTFText(EMBEDDED.gltf);
+  applyState(EMBEDDED.state || {});
+} else {
+  // Optional auto-load when launched from the dashboard:
+  //   annotator?model=/files/exploded_view.glb&parts=/files/parts.json&title=Name
+  const qs = new URLSearchParams(location.search);
+  const modelUrl = qs.get('model'), partsUrl = qs.get('parts');
+  const titleQ = qs.get('title');
+  if (titleQ) {
+    state.title = titleQ;
+    const inp = document.getElementById('doctitle'); if (inp) inp.value = titleQ;
+    document.title = titleQ + ' — annotated';
+  }
+  if (modelUrl) autoLoadFromUrls(modelUrl, partsUrl);
+}
+
+async function autoLoadFromUrls(modelUrl, partsUrl) {
+  try {
+    const r = await fetch(modelUrl);
+    if (!r.ok) throw new Error('model ' + r.status);
+    const buf = await r.arrayBuffer();
+    if (modelUrl.toLowerCase().endsWith('.gltf')) {
+      gltfText = new TextDecoder().decode(buf); modelB64 = null; loadGLTFText(gltfText);
+    } else {
+      modelB64 = bufToB64(buf); gltfText = null; loadGLBBuffer(buf);
+    }
+  } catch (e) { toast('Auto-load failed: ' + e.message, true); return; }
+  if (partsUrl) {
+    try {
+      const r = await fetch(partsUrl);
+      if (r.ok) { const obj = await r.json(); if (Array.isArray(obj.items)) { applyBomData(obj.items); renderNotes(); } }
+    } catch (e) { /* parts list is optional */ }
+  }
+}
+</script>
+</body>
+</html>
