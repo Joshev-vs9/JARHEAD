@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "item": "1",
+      "name": "THRUST HOUSING",
+      "partNumber": "VSV-002682",
+      "quantity": "1.0",
+      "match": [
+        "thrust housing",
+        "vsv 002682"
+      ]
+    },
+    {
+      "item": "2",
+      "name": "FWD BEARING HOUSE",
+      "partNumber": "VSV-002683",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002683",
+        "fwd bearing house"
+      ]
+    },
+    {
+      "item": "3",
+      "name": "FWD RETAINER RING",
+      "partNumber": "VSV-002684",
+      "quantity": "1.0",
+      "match": [
+        "fwd retainer ring",
+        "vsv 002684"
+      ]
+    },
+    {
+      "item": "4",
+      "name": "PROP SHAFT",
+      "partNumber": "VSV-002685",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002685",
+        "prop shaft"
+      ]
+    },
+    {
+      "item": "5",
+      "name": "REVERSE THRUST SUPPORT RING",
+      "partNumber": "VSV-002688",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002688",
+        "reverse thrust support ring"
+      ]
+    },
+    {
+      "item": "6",
+      "name": "TAB WASHER",
+      "partNumber": "VSV-002689",
+      "quantity": "1.0",
+      "match": [
+        "tab washer",
+        "vsv 002689"
+      ]
+    },
+    {
+      "item": "7",
+      "name": "O-RING 110 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-001414",
+      "quantity": "2.0",
+      "match": [
+        "vsv 001414",
+        "o ring 110 mm x 2 mm buna n 70"
+      ]
+    },
+    {
+      "item": "8",
+      "name": "PIPE PLUG, M14 SST",
+      "partNumber": "VSV-001418",
+      "quantity": "2.0",
+      "match": [
+        "pipe plug, m14 sst",
+        "vsv 001418"
+      ]
+    },
+    {
+      "item": "9",
+      "name": "WASHER COPPER  - M14X18X1.5",
+      "partNumber": "VSV-003483",
+      "quantity": "2.0",
+      "match": [
+        "washer copper m14x18x1.5",
+        "vsv 003483"
+      ]
+    },
+    {
+      "item": "10",
+      "name": "RADIAL SEAL, 34MM X 48MM X 8MM, HMSA10 V",
+      "partNumber": "VSV-001423",
+      "quantity": "2.0",
+      "match": [
+        "radial seal, 34mm x 48mm x 8mm, hmsa10 v",
+        "vsv 001423"
+      ]
+    },
+    {
+      "item": "11",
+      "name": "RADIAL SEAL, 37MM X 50MM X 6MM, HMSA10 V",
+      "partNumber": "VSV-001422",
+      "quantity": "1.0",
+      "match": [
+        "radial seal, 37mm x 50mm x 6mm, hmsa10 v",
+        "vsv 001422"
+      ]
+    },
+    {
+      "item": "12",
+      "name": "ANGULAR CONTACT BEARING, 40MM X 80MM X 18MM",
+      "partNumber": "VSV-001426",
+      "quantity": "1.0",
+      "match": [
+        "vsv 001426",
+        "angular contact bearing, 40mm x 80mm x 18mm"
+      ]
+    },
+    {
+      "item": "13",
+      "name": "SHCS M5X0.8 16MM 316 SST",
+      "partNumber": "VSV-000070",
+      "quantity": "4.0",
+      "match": [
+        "shcs m5x0.8 16mm 316 sst",
+        "vsv 000070"
+      ]
+    },
+    {
+      "item": "14",
+      "name": "SHCS M5X0.8 10MM 316 SST",
+      "partNumber": "VSV-000068",
+      "quantity": "2.0",
+      "match": [
+        "vsv 000068",
+        "shcs m5x0.8 10mm 316 sst"
+      ]
+    },
+    {
+      "item": "15",
+      "name": "LOCK NUT, M40X1.5 X 58MM X 11MM, KMK",
+      "partNumber": "VSV-001424",
+      "quantity": "1.0",
+      "match": [
+        "lock nut, m40x1.5 x 58mm x 11mm, kmk",
+        "vsv 001424"
+      ]
+    },
+    {
+      "item": "16",
+      "name": "SLEEVE BEARING 8MM X 10MM X 4MM IGLIDUR J",
+      "partNumber": "VSV-001294",
+      "quantity": "4.0",
+      "match": [
+        "sleeve bearing 8mm x 10mm x 4mm iglidur j",
+        "vsv 001294"
+      ]
+    },
+    {
+      "item": "17",
+      "name": "CYLINDRICAL ROLLER BEARING, 35MM X 72MM X 17MM, REMOVABLE INNER RACE",
+      "partNumber": "VSV-002691",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002691",
+        "cylindrical roller bearing, 35mm x 72mm x 17mm, removable inner race"
+      ]
+    },
+    {
+      "item": "18",
+      "name": "O-RING 80 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-003992",
+      "quantity": "1.0",
+      "match": [
+        "o ring 80 mm x 2 mm buna n 70",
+        "vsv 003992"
+      ]
+    },
+    {
+      "item": "19",
+      "name": "O-RING 72 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-003991",
+      "quantity": "1.0",
+      "match": [
+        "o ring 72 mm x 2 mm buna n 70",
+        "vsv 003991"
+      ]
+    }
+  ]
+}

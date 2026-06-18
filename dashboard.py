@@ -67,39 +67,90 @@ def _py():
     return [sys.executable, "-u"]
 
 
-def job_build(jid, source_url, indented):
-    cmd = _py() + [SCRIPT_BUILD, source_url, "--outdir", WORK, "--emit"]
-    if indented:
-        cmd.append("--bom-indented")
-
+def _run_build_job(jid, cmd):
+    """Run cmd, collect EVRESULT, return parsed output dict."""
     result = {}
-    code = None
     for line in _run(cmd):
         if line.startswith("\x00EXIT "):
-            code = int(line.split()[1]); continue
+            continue
         if line.startswith("EVRESULT "):
             try: result.update(json.loads(line[len("EVRESULT "):]))
             except Exception: pass
             continue
         _append(jid, line)
-
     out = {}
-    glb_path = result.get("glb")
-    parts_path = result.get("parts")
-    if glb_path and os.path.exists(glb_path):
-        out["model"] = "/files/" + os.path.basename(glb_path)
-    if parts_path and os.path.exists(parts_path):
-        out["parts"] = "/files/" + os.path.basename(parts_path)
+    for key, attr in (("glb", "model"), ("parts", "parts")):
+        p = result.get(key)
+        if p and os.path.exists(p):
+            out[attr] = "/files/" + os.path.basename(p)
+    rp = result.get("recipe")
+    if rp and os.path.exists(rp):
+        out["recipe"] = "/files/" + os.path.basename(rp)
     out["assembly"] = result.get("assembly") or ""
-    out["matched"] = result.get("matched")
-    out["leaves"] = result.get("leaves")
-    out["gaps"] = (result.get("unmatched_occ", 0) or 0) + (result.get("leftover_nodes", 0) or 0)
+    out["matched"]  = result.get("matched")
+    out["leaves"]   = result.get("leaves")
+    out["gaps"]     = (result.get("unmatched_occ", 0) or 0) + (result.get("leftover_nodes", 0) or 0)
+    return out
 
+def _run_recipe_job(jid, cmd):
+    """Run cmd for --fetch-recipe, return parsed output dict."""
+    result = {}
+    for line in _run(cmd):
+        if line.startswith("\x00EXIT "):
+            continue
+        if line.startswith("EVRESULT "):
+            try: result.update(json.loads(line[len("EVRESULT "):]))
+            except Exception: pass
+            continue
+        _append(jid, line)
+    out = {}
+    rp = result.get("recipe")
+    if rp and os.path.exists(rp):
+        out["recipe"] = "/files/" + os.path.basename(rp)
+    out["assembly"] = result.get("assembly") or ""
+    out["leaves"]   = result.get("leaves")
+    out["items"]    = result.get("items")
+    return out
+
+def _finish_build(jid, out):
     with JOBS_LOCK:
         JOBS[jid]["result"] = out
-        JOBS[jid]["state"] = "done" if out.get("model") else "error"
+        JOBS[jid]["state"]  = "done" if out.get("model") else "error"
         if not out.get("model"):
             _append(jid, "No model was produced — see log above.")
+
+def job_build(jid, source_url, indented):
+    cmd = _py() + [SCRIPT_BUILD, source_url, "--outdir", WORK, "--emit"]
+    if indented:
+        cmd.append("--bom-indented")
+    _finish_build(jid, _run_build_job(jid, cmd))
+
+def job_apply_local(jid, source_url, local_gltf, indented):
+    """Fast path: fetch transforms from API, apply to a local glTF export."""
+    cmd = _py() + [SCRIPT_BUILD, source_url,
+                   "--local-gltf", local_gltf, "--outdir", WORK, "--emit"]
+    if indented:
+        cmd.append("--bom-indented")
+    _finish_build(jid, _run_build_job(jid, cmd))
+
+def job_apply_recipe(jid, recipe_path, local_gltf):
+    """Fully offline: apply a saved recipe file to a local glTF export."""
+    cmd = _py() + [SCRIPT_BUILD, "--apply-recipe", recipe_path,
+                   "--local-gltf", local_gltf, "--outdir", WORK, "--emit"]
+    _finish_build(jid, _run_build_job(jid, cmd))
+
+def job_fetch_recipe(jid, source_url, indented):
+    """Fetch transforms + BOM from API, write recipe JSON — no glTF download."""
+    cmd = _py() + [SCRIPT_BUILD, source_url, "--fetch-recipe",
+                   "--outdir", WORK, "--emit"]
+    if indented:
+        cmd.append("--bom-indented")
+    out = _run_recipe_job(jid, cmd)
+    with JOBS_LOCK:
+        JOBS[jid]["result"] = out
+        JOBS[jid]["state"]  = "done" if out.get("recipe") else "error"
+        if not out.get("recipe"):
+            _append(jid, "No recipe was produced — see log above.")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -149,6 +200,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            if name.endswith(".recipe.json"):
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="{name}"')
             self.end_headers()
             self.wfile.write(data)
             return
@@ -170,6 +224,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "sourceUrl required"})
             jid = _new_job()
             threading.Thread(target=job_build, args=(jid, url, bool(body.get("indented"))),
+                             daemon=True).start()
+            return self._send(200, {"jobId": jid})
+        if path == "/api/apply-local":
+            url   = (body.get("sourceUrl") or "").strip()
+            local = (body.get("localGltf") or "").strip()
+            if not url:
+                return self._send(400, {"error": "sourceUrl required"})
+            if not local:
+                return self._send(400, {"error": "localGltf required"})
+            jid = _new_job()
+            threading.Thread(target=job_apply_local,
+                             args=(jid, url, local, bool(body.get("indented"))),
+                             daemon=True).start()
+            return self._send(200, {"jobId": jid})
+        if path == "/api/apply-recipe":
+            recipe = (body.get("recipePath") or "").strip()
+            local  = (body.get("localGltf")  or "").strip()
+            if not recipe:
+                return self._send(400, {"error": "recipePath required"})
+            if not local:
+                return self._send(400, {"error": "localGltf required"})
+            jid = _new_job()
+            threading.Thread(target=job_apply_recipe, args=(jid, recipe, local),
+                             daemon=True).start()
+            return self._send(200, {"jobId": jid})
+        if path == "/api/fetch-recipe":
+            url = (body.get("sourceUrl") or "").strip()
+            if not url:
+                return self._send(400, {"error": "sourceUrl required"})
+            jid = _new_job()
+            threading.Thread(target=job_fetch_recipe,
+                             args=(jid, url, bool(body.get("indented"))),
                              daemon=True).start()
             return self._send(200, {"jobId": jid})
         return self._send(404, {"error": "not found"})
@@ -194,7 +280,6 @@ DASHBOARD_HTML = r"""<!doctype html>
   label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-soft);margin:0 0 5px 2px}
   input[type=text]{width:100%;padding:9px 11px;border:1.5px solid var(--ink);border-radius:2px;font-size:13px;font-family:var(--mono);background:var(--panel)}
   input[type=text]:focus{outline:2px solid var(--blue);outline-offset:1px}
-  .row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin-top:10px}
   .step{background:var(--panel);border:1.5px solid var(--ink);border-radius:3px;padding:16px 18px;margin-bottom:14px}
   .step-head{display:flex;align-items:center;gap:11px;margin-bottom:13px}
   .step-n{flex:0 0 26px;height:26px;width:26px;border:2px solid var(--ink);border-radius:50%;font-family:var(--mono);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center}
@@ -208,6 +293,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   .btn:disabled{opacity:.35;cursor:default}
   .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .btn.primary:hover:not(:disabled){background:var(--blue-deep);border-color:var(--blue-deep)}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .status{font-family:var(--mono);font-size:11.5px;margin-top:9px;min-height:14px}
   .status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.err{color:var(--danger)}.status.run{color:var(--blue)}
   .log{margin-top:22px;background:#0E1116;color:#D7DAD2;border-radius:3px;padding:14px 16px;font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto;display:none}
@@ -215,12 +301,16 @@ DASHBOARD_HTML = r"""<!doctype html>
   .log .err{color:#FF8A6E}.log .warn{color:#FFCC66}
   .hint{font-size:12px;color:var(--ink-soft);margin-top:6px}
   .checkbox{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);margin-top:10px;cursor:pointer}
+  .divider{border:none;border-top:1.5px dashed var(--hairline);margin:20px 0 16px}
+  .section-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--ink-soft);margin-bottom:12px}
+  .download-link{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11.5px;color:var(--blue);text-decoration:none;margin-top:8px}
+  .download-link:hover{text-decoration:underline}
 </style></head>
 <body><div class="wrap">
   <header>
     <div class="brand">EXPLODED VIEW</div>
     <h1>Pipeline control panel</h1>
-    <div class="sub">Source assembly &rarr; annotated, shareable 3D — built from a handful of read calls.</div>
+    <div class="sub">Source assembly &rarr; annotated, shareable 3D &mdash; built from a handful of read calls.</div>
   </header>
 
   <div class="field">
@@ -230,13 +320,57 @@ DASHBOARD_HTML = r"""<!doctype html>
     <label class="checkbox"><input type="checkbox" id="indented"> Include parts nested in sub-assemblies in the BOM</label>
   </div>
 
+  <!-- ── Standard API path ─────────────────────────────────────────────── -->
+  <div class="section-label">STANDARD PATH &mdash; FETCH GEOMETRY VIA API</div>
+
   <div class="step" id="step1">
     <div class="step-head"><div class="step-n">1</div>
       <div><div class="step-title">Build exploded model</div>
-        <div class="step-desc">Fetches geometry, transforms and BOM, then bakes the explode locally. No assembly is created in Onshape.</div></div></div>
+        <div class="step-desc">Fetches geometry, transforms and BOM via the API, then bakes the explode locally. The geometry download can take 30&ndash;120&thinsp;s for large assemblies.</div></div></div>
     <button class="btn primary" id="run1">Build exploded model</button>
     <div class="status" id="st1"></div>
+    <a id="recipeLink1" class="download-link" style="display:none" download>&#x21A7; Download recipe file</a>
   </div>
+
+  <!-- ── Fast path ─────────────────────────────────────────────────────── -->
+  <hr class="divider">
+  <div class="section-label">FAST PATH &mdash; APPLY TO LOCAL GLTF EXPORT</div>
+
+  <div class="step" id="stepB">
+    <div class="step-head"><div class="step-n">B</div>
+      <div><div class="step-title">Apply to local glTF</div>
+        <div class="step-desc">Export glTF/GLB from the Onshape GUI (<em>File &rarr; Export &rarr; glTF</em>), paste the path below, then click Apply. Fetches only transforms and BOM &mdash; skips the slow geometry download entirely.</div></div></div>
+    <div class="field">
+      <label for="localGltf">LOCAL GLB / GLTF FILE PATH</label>
+      <input type="text" id="localGltf" placeholder="C:\Users\…\assembly.glb" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" id="runApplyLocal">Apply to local glTF</button>
+      <button class="btn" id="runFetchRecipe">Fetch recipe only</button>
+    </div>
+    <div class="status" id="stB"></div>
+    <a id="recipeLinkB" class="download-link" style="display:none" download>&#x21A7; Download recipe file</a>
+  </div>
+
+  <div class="step" id="stepC">
+    <div class="step-head"><div class="step-n">C</div>
+      <div><div class="step-title">Apply from recipe file</div>
+        <div class="step-desc">Have a previously-downloaded recipe (.recipe.json)? Apply it to a local glTF without any API calls.</div></div></div>
+    <div class="field">
+      <label for="recipePath">RECIPE FILE PATH (.recipe.json)</label>
+      <input type="text" id="recipePath" placeholder="C:\Users\…\assembly.recipe.json" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="localGltfC">LOCAL GLB / GLTF FILE PATH</label>
+      <input type="text" id="localGltfC" placeholder="C:\Users\…\assembly.glb" spellcheck="false" autocomplete="off">
+    </div>
+    <button class="btn primary" id="runApplyRecipe">Apply from recipe</button>
+    <div class="status" id="stC"></div>
+  </div>
+
+  <!-- ── Open annotator (shared by all paths) ──────────────────────────── -->
+  <hr class="divider">
+  <div class="section-label">ANNOTATOR</div>
 
   <div class="step" id="step2">
     <div class="step-head"><div class="step-n">2</div>
@@ -250,9 +384,11 @@ DASHBOARD_HTML = r"""<!doctype html>
 </div>
 <script>
 const $=s=>document.querySelector(s);
-const out={model:null,parts:null};
+const out={model:null,parts:null,assembly:''};
+
 function setStatus(el,msg,kind){el.className='status'+(kind?(' '+kind):'');el.textContent=msg;}
 function setStep(el,s){el.classList.remove('busy','done');if(s)el.classList.add(s);}
+
 const logEl=$('#log');
 function renderLog(lines){
   logEl.classList.add('show');
@@ -264,6 +400,7 @@ function renderLog(lines){
   }).join('\n');
   logEl.scrollTop=logEl.scrollHeight;
 }
+
 async function poll(jobId){
   while(true){
     const r=await fetch('/api/status?id='+jobId);const j=await r.json();
@@ -272,32 +409,114 @@ async function poll(jobId){
     await new Promise(res=>setTimeout(res,650));
   }
 }
+
+function showRecipeLink(linkEl, recipeUrl){
+  if(!recipeUrl)return;
+  linkEl.href=recipeUrl;
+  linkEl.style.display='inline-flex';
+}
+
+function applyBuildResult(res){
+  if(res.state==='done'&&res.result.model){
+    out.model=res.result.model;
+    out.parts=res.result.parts||null;
+    out.assembly=res.result.assembly||'';
+    $('#run2').disabled=false;
+    return true;
+  }
+  return false;
+}
+
+// ── Step 1: build via API ─────────────────────────────────────────────────
 $('#run1').addEventListener('click',async()=>{
   const sourceUrl=$('#src').value.trim();
   if(!sourceUrl){setStatus($('#st1'),'Enter a source assembly URL first.','err');return;}
   $('#run1').disabled=true;setStep($('#step1'),'busy');setStatus($('#st1'),'Building…','run');
+  $('#recipeLink1').style.display='none';
   try{
     const r=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({sourceUrl,indented:$('#indented').checked})});
     const {jobId,error}=await r.json();if(error)throw new Error(error);
     const res=await poll(jobId);
-    if(res.state==='done'&&res.result.model){
-      out.model=res.result.model;out.parts=res.result.parts||null;
+    if(applyBuildResult(res)){
       const m=res.result.matched,l=res.result.leaves,gaps=res.result.gaps||0;
-      if(gaps>0){
-        setStep($('#step1'),'done');
-        setStatus($('#st1'),`Built with gaps: ${m}/${l} parts placed. See log — some parts may not be exploded.`,'warn');
-      }else{
-        setStep($('#step1'),'done');
-        setStatus($('#st1'),`Built — ${m}/${l} parts placed.`,'ok');
-      }
-      $('#run2').disabled=false;
+      setStep($('#step1'),'done');
+      setStatus($('#st1'),gaps>0?`Built with gaps: ${m}/${l} parts placed. See log.`:`Built — ${m}/${l} parts placed.`,gaps>0?'warn':'ok');
+      showRecipeLink($('#recipeLink1'),res.result.recipe||null);
     }else{setStep($('#step1'),'');setStatus($('#st1'),'Failed — see log below.','err');}
   }catch(e){setStep($('#step1'),'');setStatus($('#st1'),'Error: '+e.message,'err');}
   $('#run1').disabled=false;
 });
+
+// ── Step B: apply to local glTF ──────────────────────────────────────────
+$('#runApplyLocal').addEventListener('click',async()=>{
+  const sourceUrl=$('#src').value.trim();
+  const localGltf=$('#localGltf').value.trim();
+  if(!sourceUrl){setStatus($('#stB'),'Enter a source assembly URL first.','err');return;}
+  if(!localGltf){setStatus($('#stB'),'Enter the local glTF file path first.','err');return;}
+  $('#runApplyLocal').disabled=true;$('#runFetchRecipe').disabled=true;
+  setStep($('#stepB'),'busy');setStatus($('#stB'),'Applying…','run');
+  $('#recipeLinkB').style.display='none';
+  try{
+    const r=await fetch('/api/apply-local',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sourceUrl,localGltf,indented:$('#indented').checked})});
+    const {jobId,error}=await r.json();if(error)throw new Error(error);
+    const res=await poll(jobId);
+    if(applyBuildResult(res)){
+      const m=res.result.matched,l=res.result.leaves,gaps=res.result.gaps||0;
+      setStep($('#stepB'),'done');
+      setStatus($('#stB'),gaps>0?`Applied with gaps: ${m}/${l} parts placed.`:`Applied — ${m}/${l} parts placed.`,gaps>0?'warn':'ok');
+      showRecipeLink($('#recipeLinkB'),res.result.recipe||null);
+    }else{setStep($('#stepB'),'');setStatus($('#stB'),'Failed — see log below.','err');}
+  }catch(e){setStep($('#stepB'),'');setStatus($('#stB'),'Error: '+e.message,'err');}
+  $('#runApplyLocal').disabled=false;$('#runFetchRecipe').disabled=false;
+});
+
+// ── Step B: fetch recipe only ────────────────────────────────────────────
+$('#runFetchRecipe').addEventListener('click',async()=>{
+  const sourceUrl=$('#src').value.trim();
+  if(!sourceUrl){setStatus($('#stB'),'Enter a source assembly URL first.','err');return;}
+  $('#runApplyLocal').disabled=true;$('#runFetchRecipe').disabled=true;
+  setStep($('#stepB'),'busy');setStatus($('#stB'),'Fetching recipe…','run');
+  $('#recipeLinkB').style.display='none';
+  try{
+    const r=await fetch('/api/fetch-recipe',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sourceUrl,indented:$('#indented').checked})});
+    const {jobId,error}=await r.json();if(error)throw new Error(error);
+    const res=await poll(jobId);
+    if(res.state==='done'&&res.result.recipe){
+      setStep($('#stepB'),'done');
+      setStatus($('#stB'),`Recipe ready — ${res.result.leaves||'?'} occurrences, ${res.result.items||'?'} BOM items.`,'ok');
+      showRecipeLink($('#recipeLinkB'),res.result.recipe);
+    }else{setStep($('#stepB'),'');setStatus($('#stB'),'Failed — see log below.','err');}
+  }catch(e){setStep($('#stepB'),'');setStatus($('#stB'),'Error: '+e.message,'err');}
+  $('#runApplyLocal').disabled=false;$('#runFetchRecipe').disabled=false;
+});
+
+// ── Step C: apply from recipe file ───────────────────────────────────────
+$('#runApplyRecipe').addEventListener('click',async()=>{
+  const recipePath=$('#recipePath').value.trim();
+  const localGltf=$('#localGltfC').value.trim();
+  if(!recipePath){setStatus($('#stC'),'Enter the recipe file path first.','err');return;}
+  if(!localGltf){setStatus($('#stC'),'Enter the local glTF file path first.','err');return;}
+  $('#runApplyRecipe').disabled=true;setStep($('#stepC'),'busy');setStatus($('#stC'),'Applying…','run');
+  try{
+    const r=await fetch('/api/apply-recipe',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recipePath,localGltf})});
+    const {jobId,error}=await r.json();if(error)throw new Error(error);
+    const res=await poll(jobId);
+    if(applyBuildResult(res)){
+      const m=res.result.matched,l=res.result.leaves,gaps=res.result.gaps||0;
+      setStep($('#stepC'),'done');
+      setStatus($('#stC'),gaps>0?`Applied with gaps: ${m}/${l} parts placed.`:`Applied — ${m}/${l} parts placed.`,gaps>0?'warn':'ok');
+    }else{setStep($('#stepC'),'');setStatus($('#stC'),'Failed — see log below.','err');}
+  }catch(e){setStep($('#stepC'),'');setStatus($('#stC'),'Error: '+e.message,'err');}
+  $('#runApplyRecipe').disabled=false;
+});
+
+// ── Step 2: open annotator ────────────────────────────────────────────────
 $('#run2').addEventListener('click',()=>{
-  if(!out.model){setStatus($('#st2'),'Build something first.','err');return;}
+  if(!out.model){setStatus($('#st2'),'Complete one of the steps above first.','err');return;}
   const q=new URLSearchParams({model:out.model});
   if(out.parts)q.set('parts',out.parts);
   if(out.assembly)q.set('title',out.assembly);

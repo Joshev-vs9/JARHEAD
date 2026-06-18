@@ -80,7 +80,8 @@ def load_config() -> dict:
                         k, _, v = line.partition("=")
                         cfg[k.strip().lower()] = v.strip()
             return cfg
-    sys.exit("ERROR: .onshape credentials file not found.")
+    log.warning("No .onshape credentials file found.")
+    return {}
 
 
 _URL_RE = re.compile(
@@ -98,8 +99,8 @@ def parse_url(url):
 cfg = load_config()
 ACCESS = cfg.get("access_key") or os.environ.get("ONSHAPE_ACCESS_KEY", "")
 SECRET = cfg.get("secret_key") or os.environ.get("ONSHAPE_SECRET_KEY", "")
-if not ACCESS or not SECRET:
-    sys.exit("ERROR: access_key / secret_key not set.")
+# Credentials may be absent when using --apply-recipe (no API calls needed).
+# The check is deferred to main() so that mode can run offline.
 
 
 def _headers(accept):
@@ -338,6 +339,101 @@ def leaf_paths(paths):
         if not any(len(q) > len(p) and q[:len(p)] == p for q in pathset):
             leaves.append(p)
     return leaves
+
+
+def build_exploded_gltf(gltf, A, E, names, leaves):
+    """Match occurrences to glTF nodes and apply exploded transforms in-place.
+
+    Modifies gltf["nodes"] directly.
+    Returns (matched_count, unmatched_occ_list, leftover_node_list).
+    """
+    nodes, parent, world, depth, has_mesh, node_names, root_ids = analyse_gltf(gltf)
+
+    used = set()
+    bakes = []
+    unmatched_occ = []
+    for path in leaves:
+        e = E[path]
+        a = A.get(path)
+        nm = names.get(path[-1], "") if path else ""
+        cand = []
+        for i in range(len(nodes)):
+            if i in root_ids or not has_mesh[i] or i in used:
+                continue
+            if a is not None:
+                if not close_xform(world[i], a):
+                    continue
+            else:
+                if node_names[i] != nm or not nm:
+                    continue
+            cand.append(i)
+        if not cand:
+            unmatched_occ.append((path, nm))
+            continue
+        cand.sort(key=lambda i: (0 if node_names[i] == nm and nm else 1,
+                                 depth[i],
+                                 trans_dist(world[i], a) if a else 0.0))
+        pick = cand[0]
+        used.add(pick)
+        bakes.append((pick, e))
+
+    matched = len(bakes)
+    if unmatched_occ:
+        log.warning("%d occurrence(s) had no matching glTF node "
+                    "(they will stay at their assembled position):", len(unmatched_occ))
+        for path, nm in unmatched_occ[:12]:
+            log.warning("    %r  path=%s", nm or "?", list(path))
+    leftover = [i for i in range(len(nodes))
+                if has_mesh[i] and i not in root_ids and i not in used and depth[i] == 1]
+    if leftover:
+        log.warning("%d glTF instance node(s) were not assigned an exploded transform:",
+                    len(leftover))
+        for i in leftover[:12]:
+            log.warning("    [%d] %r", i, node_names[i])
+
+    for i, e in bakes:
+        p = parent[i]
+        parent_world = world[p] if p is not None else IDENTITY
+        new_local = mat_mul(mat_inverse(parent_world), e)
+        node = nodes[i]
+        node.pop("translation", None)
+        node.pop("rotation", None)
+        node.pop("scale", None)
+        node["matrix"] = [round(v, 9) for v in transpose16(new_local)]
+
+    return matched, unmatched_occ, leftover
+
+
+def make_recipe(A, E, names, leaves, asm_name, slug, did, wvm, wvm_id, eid, view, bom):
+    """Serialise occurrence transform data + BOM into a portable recipe dict."""
+    occs = []
+    for path in leaves:
+        e = E.get(path)
+        if not e:
+            continue
+        a = A.get(path)
+        nm = names.get(path[-1], "") if path else ""
+        occs.append({
+            "path":      list(path),
+            "name":      nm,
+            "assembled": a,    # None for occurrences missing from assembled def
+            "exploded":  e,
+        })
+    return {
+        "version": 1,
+        "assembly": asm_name,
+        "slug": slug,
+        "source": {
+            "documentId": did,
+            "wvm": wvm,
+            "wvmId": wvm_id,
+            "elementId": eid,
+            "explodedViewId": view["id"],
+            "explodedViewName": view.get("name", ""),
+        },
+        "occurrences": occs,
+        "bom": bom,
+    }
 
 
 def slugify(name, fallback="exploded_view"):
@@ -872,10 +968,7 @@ def probe_gltf_grouping(asm):
 
 def main():
     flags = sys.argv[1:]
-    args = [a for a in flags if not a.startswith("--")]
-    if not args:
-        sys.exit("Usage: python onshape_build_exploded.py <source-assembly-url> "
-                 "[--glb out.glb] [--parts parts.json] [--bom-indented] [--emit]")
+    args  = [a for a in flags if not a.startswith("--")]
 
     def flag(name, default=None):
         for i, a in enumerate(flags):
@@ -885,11 +978,107 @@ def main():
                 return a.split("=", 1)[1]
         return default
 
-    glb_out   = flag("--glb")
-    parts_out = flag("--parts")
-    outdir    = flag("--outdir", ".")
-    indented  = "--bom-indented" in flags
-    emit      = "--emit" in flags
+    glb_out           = flag("--glb")
+    parts_out         = flag("--parts")
+    recipe_out        = flag("--recipe")
+    outdir            = flag("--outdir", ".")
+    indented          = "--bom-indented" in flags
+    emit              = "--emit" in flags
+    do_fetch_recipe   = "--fetch-recipe" in flags
+    local_gltf        = flag("--local-gltf")
+    apply_recipe_path = flag("--apply-recipe")
+
+    # ── Mode: apply recipe to local glTF — no API calls needed ───────────────
+    if apply_recipe_path:
+        if not local_gltf:
+            if args:
+                local_gltf = args[0]
+            else:
+                sys.exit("ERROR: --apply-recipe requires --local-gltf <path> "
+                         "(or pass the glTF path as a positional argument).")
+        if not os.path.isfile(apply_recipe_path):
+            sys.exit(f"ERROR: recipe file not found: {apply_recipe_path}")
+        if not os.path.isfile(local_gltf):
+            sys.exit(f"ERROR: local glTF not found: {local_gltf}")
+
+        log.info("Loading recipe from %s", apply_recipe_path)
+        with open(apply_recipe_path) as f:
+            recipe = json.load(f)
+
+        A, E, names = {}, {}, {}
+        for occ in recipe.get("occurrences", []):
+            path = tuple(occ["path"])
+            if occ.get("assembled"):
+                A[path] = [float(x) for x in occ["assembled"]]
+            if occ.get("exploded"):
+                E[path] = [float(x) for x in occ["exploded"]]
+            if path and occ.get("name"):
+                names[path[-1]] = occ["name"]
+        leaves   = leaf_paths(list(E.keys()))
+        bom      = recipe.get("bom", {"version": 1, "items": []})
+        asm_name = recipe.get("assembly", "")
+        slug     = recipe.get("slug", "") or slugify(asm_name)
+
+        if not glb_out:
+            glb_out   = os.path.join(outdir, slug + ".glb")
+        if not parts_out:
+            parts_out = os.path.join(outdir, slug + ".parts.json")
+
+        log.info("Reading local glTF: %s", local_gltf)
+        with open(local_gltf, "rb") as f:
+            content = f.read()
+        gltf, chunks = read_glb(content)
+        is_glb = chunks is not None
+        log.info("glTF parsed (%s).", "GLB" if is_glb else "JSON")
+
+        log.info("Applying exploded transforms (%d occurrences) …", len(leaves))
+        matched, unmatched_occ, leftover = build_exploded_gltf(gltf, A, E, names, leaves)
+        log.info("Matched %d / %d occurrence(s).", matched, len(leaves))
+
+        if is_glb:
+            out_bytes = write_glb(gltf, chunks)
+            if not glb_out.lower().endswith(".glb"):
+                glb_out = os.path.splitext(glb_out)[0] + ".glb"
+            with open(glb_out, "wb") as fh:
+                fh.write(out_bytes)
+        else:
+            if not glb_out.lower().endswith(".gltf"):
+                glb_out = os.path.splitext(glb_out)[0] + ".gltf"
+            with open(glb_out, "w") as fh:
+                json.dump(gltf, fh)
+        log.info("Wrote %s", glb_out)
+
+        with open(parts_out, "w") as fh:
+            json.dump(bom, fh, indent=2)
+        log.info("Wrote %s (%d BOM items)", parts_out, len(bom["items"]))
+
+        if emit:
+            print("EVRESULT " + json.dumps({
+                "glb": glb_out, "parts": parts_out,
+                "recipe": apply_recipe_path,
+                "assembly": asm_name, "slug": slug,
+                "matched": matched, "leaves": len(leaves),
+                "unmatched_occ": len(unmatched_occ), "leftover_nodes": len(leftover),
+            }), flush=True)
+        if unmatched_occ or leftover:
+            log.warning("Completed with matching gaps — see warnings above.")
+        return
+
+    # ── All remaining modes need the source assembly URL ─────────────────────
+    if not args:
+        sys.exit(
+            "Usage:\n"
+            "  python onshape_build_exploded.py <source-assembly-url>\n"
+            "         [--glb out.glb] [--parts parts.json] [--recipe recipe.json]\n"
+            "         [--local-gltf local.glb] [--fetch-recipe]\n"
+            "         [--bom-indented] [--emit]\n"
+            "\n"
+            "  python onshape_build_exploded.py --apply-recipe recipe.json\n"
+            "         --local-gltf local.glb [--outdir dir] [--emit]"
+        )
+
+    if not ACCESS or not SECRET:
+        sys.exit("ERROR: access_key / secret_key not set.")
 
     base, did, wvm, wvm_id, eid = parse_url(args[0].strip())
     asm = f"{base}/api/{API_VERSION}/assemblies/d/{did}/{wvm}/{wvm_id}/e/{eid}"
@@ -918,12 +1107,27 @@ def main():
         probe_gltf_explode(asm, view["id"])
         return
 
-    # 2) glTF (assembled geometry)
-    log.info("Fetching assembly glTF (Onshape generates this server-side — may take 30–120 s) …")
-    content = api_get_bytes(asm + "/gltf", "model/gltf-binary")
-    gltf, chunks = read_glb(content)
-    is_glb = chunks is not None
-    log.info("glTF parsed (%s).", "GLB" if is_glb else "JSON")
+    # 2) glTF — skipped for --fetch-recipe, read from disk for --local-gltf
+    gltf = chunks = None
+    is_glb = True
+    if do_fetch_recipe:
+        log.info("--fetch-recipe: skipping glTF download.")
+    elif local_gltf:
+        if not os.path.isfile(local_gltf):
+            sys.exit(f"ERROR: local glTF not found: {local_gltf}")
+        log.info("Reading local glTF: %s", local_gltf)
+        with open(local_gltf, "rb") as f:
+            content = f.read()
+        gltf, chunks = read_glb(content)
+        is_glb = chunks is not None
+        log.info("glTF parsed (%s).", "GLB" if is_glb else "JSON")
+    else:
+        log.info("Fetching assembly glTF "
+                 "(Onshape generates this server-side — may take 30–120 s) …")
+        content = api_get_bytes(asm + "/gltf", "model/gltf-binary")
+        gltf, chunks = read_glb(content)
+        is_glb = chunks is not None
+        log.info("glTF parsed (%s).", "GLB" if is_glb else "JSON")
 
     # 3) assembled definition (transforms + names)
     log.info("Fetching assembly definition (assembled) …")
@@ -937,11 +1141,14 @@ def main():
     asm_name = fetch_assembly_name(base, did, wvm, wvm_id, eid)
     slug = slugify(asm_name)
     if not glb_out:
-        glb_out = os.path.join(outdir, slug + ".glb")
+        glb_out   = os.path.join(outdir, slug + ".glb")
     if not parts_out:
         parts_out = os.path.join(outdir, slug + ".parts.json")
-    log.info("Assembly name: %r  ->  outputs %s / %s",
-             asm_name or "(unknown)", os.path.basename(glb_out), os.path.basename(parts_out))
+    if not recipe_out:
+        recipe_out = os.path.join(outdir, slug + ".recipe.json")
+    log.info("Assembly: %r  ->  %s / %s / %s",
+             asm_name or "(unknown)", os.path.basename(glb_out),
+             os.path.basename(parts_out), os.path.basename(recipe_out))
 
     # 4) exploded definition (exploded transforms)
     log.info("Fetching assembly definition (exploded) …")
@@ -955,95 +1162,57 @@ def main():
         probe_occ_vs_gltf(gltf, assembled, exploded)
         return
 
-    A = occ_map(assembled)
-    E = occ_map(exploded)
-    names = name_map(assembled) or name_map(exploded)
-
+    A      = occ_map(assembled)
+    E      = occ_map(exploded)
+    names  = name_map(assembled) or name_map(exploded)
     leaves = leaf_paths(list(E.keys()))
     log.info("Exploded view has %d leaf occurrence(s).", len(leaves))
 
-    # ── Match glTF instance nodes to occurrences and bake ─────────────────────
-    nodes, parent, world, depth, has_mesh, node_names, root_ids = analyse_gltf(gltf)
+    # 5) BOM
+    log.info("Fetching BOM …")
+    bom = fetch_bom(base, did, wvm, wvm_id, eid, indented)
 
-    used = set()
-    bakes = []          # (node_index, E_transform)
-    unmatched_occ = []
-    for path in leaves:
-        e = E[path]
-        a = A.get(path)
-        nm = names.get(path[-1], "") if path else ""
-        cand = []
-        for i in range(len(nodes)):
-            if i in root_ids or not has_mesh[i] or i in used:
-                continue
-            if a is not None:
-                if not close_xform(world[i], a):
-                    continue
-            else:
-                if node_names[i] != nm or not nm:
-                    continue
-            cand.append(i)
-        if not cand:
-            unmatched_occ.append((path, nm))
-            continue
-        cand.sort(key=lambda i: (0 if node_names[i] == nm and nm else 1,
-                                 depth[i],
-                                 trans_dist(world[i], a) if a else 0.0))
-        pick = cand[0]
-        used.add(pick)
-        bakes.append((pick, e))
+    # Write recipe file (always — side-effect of every non-probe build)
+    recipe_data = make_recipe(A, E, names, leaves, asm_name, slug,
+                              did, wvm, wvm_id, eid, view, bom)
+    with open(recipe_out, "w") as fh:
+        json.dump(recipe_data, fh, indent=2)
+    log.info("Wrote recipe %s", recipe_out)
 
-    # Report
-    matched = len(bakes)
+    # ── Mode: fetch recipe only (no glTF processing) ─────────────────────────
+    if do_fetch_recipe:
+        if emit:
+            print("EVRESULT " + json.dumps({
+                "recipe": recipe_out, "assembly": asm_name, "slug": slug,
+                "leaves": len(leaves), "items": len(bom["items"]),
+            }), flush=True)
+        return
+
+    # Apply exploded transforms to glTF
+    matched, unmatched_occ, leftover = build_exploded_gltf(gltf, A, E, names, leaves)
     log.info("Matched %d / %d occurrence(s) to glTF nodes.", matched, len(leaves))
-    if unmatched_occ:
-        log.warning("%d occurrence(s) had no matching glTF node "
-                    "(they will stay at their assembled position):", len(unmatched_occ))
-        for path, nm in unmatched_occ[:12]:
-            log.warning("    %r  path=%s", nm or "?", list(path))
-    leftover = [i for i in range(len(nodes))
-                if has_mesh[i] and i not in root_ids and i not in used and depth[i] == 1]
-    if leftover:
-        log.warning("%d glTF instance node(s) were not assigned an exploded "
-                    "transform:", len(leftover))
-        for i in leftover[:12]:
-            log.warning("    [%d] %r", i, node_names[i])
-
-    # Apply: rewrite each matched node's local transform so its WORLD becomes E.
-    for i, e in bakes:
-        p = parent[i]
-        parent_world = world[p] if p is not None else IDENTITY
-        new_local = mat_mul(mat_inverse(parent_world), e)
-        node = nodes[i]
-        node.pop("translation", None)
-        node.pop("rotation", None)
-        node.pop("scale", None)
-        node["matrix"] = [round(v, 9) for v in transpose16(new_local)]  # row-major -> col-major
 
     # Write the exploded GLB (binary geometry untouched).
     if is_glb:
         out_bytes = write_glb(gltf, chunks)
         if not glb_out.lower().endswith(".glb"):
             glb_out = os.path.splitext(glb_out)[0] + ".glb"
-        with open(glb_out, "wb") as f:
-            f.write(out_bytes)
+        with open(glb_out, "wb") as fh:
+            fh.write(out_bytes)
     else:
         if not glb_out.lower().endswith(".gltf"):
             glb_out = os.path.splitext(glb_out)[0] + ".gltf"
-        with open(glb_out, "w") as f:
-            json.dump(gltf, f)
+        with open(glb_out, "w") as fh:
+            json.dump(gltf, fh)
     log.info("Wrote %s", glb_out)
 
-    # 5) BOM
-    log.info("Fetching BOM …")
-    bom = fetch_bom(base, did, wvm, wvm_id, eid, indented)
-    with open(parts_out, "w") as f:
-        json.dump(bom, f, indent=2)
+    with open(parts_out, "w") as fh:
+        json.dump(bom, fh, indent=2)
     log.info("Wrote %s (%d BOM items)", parts_out, len(bom["items"]))
 
     if emit:
         print("EVRESULT " + json.dumps({
-            "glb": glb_out, "parts": parts_out,
+            "glb": glb_out, "parts": parts_out, "recipe": recipe_out,
             "assembly": asm_name, "slug": slug,
             "matched": matched, "leaves": len(leaves),
             "unmatched_occ": len(unmatched_occ), "leftover_nodes": len(leftover),
