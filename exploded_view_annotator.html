@@ -706,6 +706,14 @@ function syncBalloons() {
     el.className = 'balloon'; el.setAttribute('aria-label', 'Balloon note');
     el.addEventListener('click', () => {
       if (refInsertFor !== null) { insertRefInto(refInsertFor, n.id); return; }
+      if (mode === 'reconnect') {
+        const note = state.notes.find(x => x.id === n.id);
+        if (note && note.floating) {
+          reconnectPick = n.id; selectedId = n.id; renderNotes();
+          toast('Now click this balloon\'s part in the model');
+          return;
+        }
+      }
       selectNote(n.id, false); showPopover(n.id);
       const item = notelist.querySelector(`[data-id="${n.id}"]`);
       if (item) item.scrollIntoView({ block: 'nearest', behavior: REDUCED ? 'auto' : 'smooth' });
@@ -961,10 +969,15 @@ if (READ_ONLY) {
 async function autoLoadFromUrls(modelUrl, partsUrl) {
   try {
     const r = await fetch(modelUrl);
-    if (!r.ok) throw new Error('model ' + r.status);
+    if (!r.ok) throw new Error('model HTTP ' + r.status);
     const buf = await r.arrayBuffer();
     if (modelUrl.toLowerCase().endsWith('.gltf')) {
-      gltfText = new TextDecoder().decode(buf); modelB64 = null; loadGLTFText(gltfText);
+      // Pass the directory of the model URL as the resource base so Three.js
+      // can resolve any external buffer/image references correctly.
+      const basePath = modelUrl.substring(0, modelUrl.lastIndexOf('/') + 1);
+      gltfText = new TextDecoder().decode(buf); modelB64 = null;
+      loader.parse(gltfText, basePath, addModel,
+        e => toast('Could not read model: ' + e.message, true));
     } else {
       modelB64 = bufToB64(buf); gltfText = null; loadGLBBuffer(buf);
     }
@@ -972,8 +985,11 @@ async function autoLoadFromUrls(modelUrl, partsUrl) {
   if (partsUrl) {
     try {
       const r = await fetch(partsUrl);
-      if (r.ok) { const obj = await r.json(); if (Array.isArray(obj.items)) { applyBomData(obj.items); renderNotes(); } }
-    } catch (e) { /* parts list is optional */ }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const obj = await r.json();
+      if (Array.isArray(obj.items)) { applyBomData(obj.items); renderNotes(); toast(`Parts list loaded — ${state.bom.length} items`); }
+      else throw new Error('no items array in response');
+    } catch (e) { toast('Parts list failed to load: ' + e.message, true); }
   }
 }
 </script>

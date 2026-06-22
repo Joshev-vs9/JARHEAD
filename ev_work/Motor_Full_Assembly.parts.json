@@ -1,0 +1,385 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "item": "1",
+      "name": "CASE - MOTOR 40KW",
+      "partNumber": "VSV-002354",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002354",
+        "case motor 40kw"
+      ]
+    },
+    {
+      "item": "2",
+      "name": "STATOR STACK - 180MM",
+      "partNumber": "VSV-002254",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002254",
+        "stator stack 180mm"
+      ]
+    },
+    {
+      "item": "3",
+      "name": "END TURN ORGANISER - 12 SLOT",
+      "partNumber": "VSV-002255",
+      "quantity": "2.0",
+      "match": [
+        "end turn organiser 12 slot",
+        "vsv 002255"
+      ]
+    },
+    {
+      "item": "4",
+      "name": "PHASE TERMINAL - 8MM",
+      "partNumber": "VSV-002257",
+      "quantity": "3.0",
+      "match": [
+        "vsv 002257",
+        "phase terminal 8mm"
+      ]
+    },
+    {
+      "item": "5",
+      "name": "HEATSHRINK SLOT LINER",
+      "partNumber": "VSV-002284",
+      "quantity": "12.0",
+      "match": [
+        "vsv 002284",
+        "heatshrink slot liner"
+      ]
+    },
+    {
+      "item": "6",
+      "name": "THERMISTOR - 5KOHM 1%",
+      "partNumber": "VSV-002330",
+      "quantity": "1.0",
+      "match": [
+        "thermistor 5kohm 1%",
+        "vsv 002330"
+      ]
+    },
+    {
+      "item": "7",
+      "name": "0.5 MM OD ENAMELLED COPPER WIRE",
+      "partNumber": "VSV-900098",
+      "quantity": "1.0",
+      "match": [
+        "0.5 mm od enamelled copper wire",
+        "vsv 900098"
+      ]
+    },
+    {
+      "item": "8",
+      "name": "OIL TUBE END",
+      "partNumber": "VSV-002355",
+      "quantity": "2.0",
+      "match": [
+        "vsv 002355",
+        "oil tube end"
+      ]
+    },
+    {
+      "item": "9",
+      "name": "OIL TUBE",
+      "partNumber": "VSV-002356",
+      "quantity": "1.0",
+      "match": [
+        "oil tube",
+        "vsv 002356"
+      ]
+    },
+    {
+      "item": "10",
+      "name": "SHAFT-18 TOOTH",
+      "partNumber": "VSV-002122",
+      "quantity": "1.0",
+      "match": [
+        "shaft 18 tooth",
+        "vsv 002122"
+      ]
+    },
+    {
+      "item": "11",
+      "name": "ENDCAP-30 X 74",
+      "partNumber": "VSV-002123",
+      "quantity": "2.0",
+      "match": [
+        "vsv 002123",
+        "endcap 30 x 74"
+      ]
+    },
+    {
+      "item": "12",
+      "name": "SEGMENT-45 MM 10 SLOT",
+      "partNumber": "VSV-002124",
+      "quantity": "4.0",
+      "match": [
+        "segment 45 mm 10 slot",
+        "vsv 002124"
+      ]
+    },
+    {
+      "item": "13",
+      "name": "MAGNET-20 X 15 X 7",
+      "partNumber": "VSV-002125",
+      "quantity": "120.0",
+      "match": [
+        "magnet 20 x 15 x 7",
+        "vsv 002125"
+      ]
+    },
+    {
+      "item": "14",
+      "name": "DEEP GROOVE BALL BEARING, 30MM X 55MM X 13MM, CERAMIC",
+      "partNumber": "VSV-002161",
+      "quantity": "2.0",
+      "match": [
+        "deep groove ball bearing, 30mm x 55mm x 13mm, ceramic",
+        "vsv 002161"
+      ]
+    },
+    {
+      "item": "15",
+      "name": "DOWEL PIN 3MM X 8MM 316 SST",
+      "partNumber": "VSV-000382",
+      "quantity": "1.0",
+      "match": [
+        "vsv 000382",
+        "dowel pin 3mm x 8mm 316 sst"
+      ]
+    },
+    {
+      "item": "16",
+      "name": "LITTLE END CAP",
+      "partNumber": "VSV-002358",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002358",
+        "little end cap"
+      ]
+    },
+    {
+      "item": "17",
+      "name": "BIG END CAP",
+      "partNumber": "VSV-002359",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002359",
+        "big end cap"
+      ]
+    },
+    {
+      "item": "18",
+      "name": "LUG ISOLATOR - 3 POSITION",
+      "partNumber": "VSV-002357",
+      "quantity": "1.0",
+      "match": [
+        "lug isolator 3 position",
+        "vsv 002357"
+      ]
+    },
+    {
+      "item": "19",
+      "name": "LUG ISOLATOR RETAINER",
+      "partNumber": "VSV-002360",
+      "quantity": "1.0",
+      "match": [
+        "lug isolator retainer",
+        "vsv 002360"
+      ]
+    },
+    {
+      "item": "20",
+      "name": "TEMP PASSTHROUGH PCB",
+      "partNumber": "VSV-002361",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002361",
+        "temp passthrough pcb"
+      ]
+    },
+    {
+      "item": "21",
+      "name": "SPRING WASHER 46.11MM X 55MM X 0.61MM 304SST",
+      "partNumber": "VSV-001463",
+      "quantity": "1.0",
+      "match": [
+        "spring washer 46.11mm x 55mm x 0.61mm 304sst",
+        "vsv 001463"
+      ]
+    },
+    {
+      "item": "22",
+      "name": "O-RING 140 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-001474",
+      "quantity": "4.0",
+      "match": [
+        "vsv 001474",
+        "o ring 140 mm x 2 mm buna n 70"
+      ]
+    },
+    {
+      "item": "23",
+      "name": "O-RING 10 MM X 1.5 MM BUNA-N 70",
+      "partNumber": "VSV-001479",
+      "quantity": "1.0",
+      "match": [
+        "o ring 10 mm x 1.5 mm buna n 70",
+        "vsv 001479"
+      ]
+    },
+    {
+      "item": "24",
+      "name": "O-RING 15 MM X 1.5 MM BUNA-N 70",
+      "partNumber": "VSV-001478",
+      "quantity": "1.0",
+      "match": [
+        "vsv 001478",
+        "o ring 15 mm x 1.5 mm buna n 70"
+      ]
+    },
+    {
+      "item": "25",
+      "name": "O-RING 54 MM X 3 MM BUNA-N 70",
+      "partNumber": "VSV-002353",
+      "quantity": "2.0",
+      "match": [
+        "vsv 002353",
+        "o ring 54 mm x 3 mm buna n 70"
+      ]
+    },
+    {
+      "item": "26",
+      "name": "O-RING 74 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-001473",
+      "quantity": "4.0",
+      "match": [
+        "vsv 001473",
+        "o ring 74 mm x 2 mm buna n 70"
+      ]
+    },
+    {
+      "item": "27",
+      "name": "O-RING 41 MM X 2 MM BUNA-N 70",
+      "partNumber": "VSV-001476",
+      "quantity": "2.0",
+      "match": [
+        "o ring 41 mm x 2 mm buna n 70",
+        "vsv 001476"
+      ]
+    },
+    {
+      "item": "28",
+      "name": "O-RING 8.5 MM X 1.5 MM BUNA-N 70",
+      "partNumber": "VSV-001477",
+      "quantity": "6.0",
+      "match": [
+        "o ring 8.5 mm x 1.5 mm buna n 70",
+        "vsv 001477"
+      ]
+    },
+    {
+      "item": "29",
+      "name": "BHCS M3X0.5 6MM 316 SST",
+      "partNumber": "VSV-000297",
+      "quantity": "4.0",
+      "match": [
+        "bhcs m3x0.5 6mm 316 sst",
+        "vsv 000297"
+      ]
+    },
+    {
+      "item": "30",
+      "name": "CSK M5X0.8 10MM 316 SST",
+      "partNumber": "VSV-000126",
+      "quantity": "2.0",
+      "match": [
+        "csk m5x0.8 10mm 316 sst",
+        "vsv 000126"
+      ]
+    },
+    {
+      "item": "31",
+      "name": "SHCS M3X0.5 16MM 316 SST",
+      "partNumber": "VSV-000050",
+      "quantity": "10.0",
+      "match": [
+        "vsv 000050",
+        "shcs m3x0.5 16mm 316 sst"
+      ]
+    },
+    {
+      "item": "32",
+      "name": "BONDED WASHER M4 316 SST",
+      "partNumber": "VSV-001260",
+      "quantity": "1.0",
+      "match": [
+        "bonded washer m4 316 sst",
+        "vsv 001260"
+      ]
+    },
+    {
+      "item": "33",
+      "name": "LOW PROFILE SHCS M4X0.7 6MM A4 SST",
+      "partNumber": "VSV-000762",
+      "quantity": "1.0",
+      "match": [
+        "vsv 000762",
+        "low profile shcs m4x0.7 6mm a4 sst"
+      ]
+    },
+    {
+      "item": "34",
+      "name": "SHCS M3X0.5 8MM 316 SST",
+      "partNumber": "VSV-000047",
+      "quantity": "2.0",
+      "match": [
+        "vsv 000047",
+        "shcs m3x0.5 8mm 316 sst"
+      ]
+    },
+    {
+      "item": "35",
+      "name": "SNAP RING, WIRE, 10MM 303 SST",
+      "partNumber": "VSV-002566",
+      "quantity": "3.0",
+      "match": [
+        "vsv 002566",
+        "snap ring, wire, 10mm 303 sst"
+      ]
+    },
+    {
+      "item": "36",
+      "name": "CONNECTOR HOUSING - 2 CONTACT - MICRO-LOCK PLUS",
+      "partNumber": "VSV-002402",
+      "quantity": "1.0",
+      "match": [
+        "connector housing 2 contact micro lock plus",
+        "vsv 002402"
+      ]
+    },
+    {
+      "item": "37",
+      "name": "GROUNDING BRUSH",
+      "partNumber": "VSV-002584",
+      "quantity": "1.0",
+      "match": [
+        "vsv 002584",
+        "grounding brush"
+      ]
+    },
+    {
+      "item": "38",
+      "name": "MICRO-LOCK PLUS CRIMP TERM 26-30",
+      "partNumber": "VSV-900101",
+      "quantity": "2.0",
+      "match": [
+        "micro lock plus crimp term 26 30",
+        "vsv 900101"
+      ]
+    }
+  ]
+}
